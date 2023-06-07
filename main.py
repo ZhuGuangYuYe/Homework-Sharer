@@ -10,6 +10,14 @@ class HTTPServer:
     async def handle_request(self, reader, writer):
         request_data = await reader.read(1024)
         request = request_data.decode()
+
+        # 创建用于监测传输大小的变量
+        total_size = 0
+
+        async def monitor_size(data):
+            nonlocal total_size
+            total_size += len(data)
+
         try:
             request_lines = request.split('\n')
             # 获取请求行
@@ -17,6 +25,13 @@ class HTTPServer:
                 request_line = request_lines[0].strip()
                 # 获取请求方法和路径
                 method, path, _ = request_line.split(' ')
+
+                # 统计请求头大小
+                request_headers_size = sum(len(line) + 2 for line in request_lines)
+
+                # 检查请求头大小
+                if request_headers_size > 10 * 1024:
+                    raise ValueError('Request Header Too Large')
 
                 # 解析GET参数
                 get_params = {}
@@ -30,7 +45,19 @@ class HTTPServer:
                     if line.startswith('Content-Length:'):
                         content_length = int(line.split(':')[1])
                         break
+
+                # 统计请求体大小
+                request_body_size = len(request) - request.find('\r\n\r\n') - 4
+
+                # 检查请求体大小
+                if content_length > 5000 * 1024 or request_body_size > 5000 * 1024:
+                    raise ValueError('Request Body Too Large')
+
                 post_data = request.split('\r\n\r\n', 1)[1][:content_length]
+
+                # 异步监测传输大小
+                await monitor_size(post_data.encode())
+
                 post_params = parse_qs(post_data)
 
                 # 解析Cookie
@@ -51,8 +78,11 @@ class HTTPServer:
                 writer.write(response.encode())
                 await writer.drain()
 
-        except ValueError:
-            response_headers, response_content = self.build_error_response(400, 'Bad Request')
+                # 等待传输大小监测完成
+                await asyncio.sleep(0)
+
+        except ValueError as e:
+            response_headers, response_content = self.build_error_response(413, str(e))
             response = '\r\n'.join(response_headers) + response_content
             writer.write(response.encode())
             await writer.drain()
