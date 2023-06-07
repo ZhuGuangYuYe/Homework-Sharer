@@ -39,27 +39,6 @@ class HTTPServer:
                     path, query_string = path.split('?', 1)
                     get_params = parse_qs(query_string)
 
-                # 解析POST参数
-                content_length = 0
-                for line in request_lines:
-                    if line.startswith('Content-Length:'):
-                        content_length = int(line.split(':')[1])
-                        break
-
-                # 统计请求体大小
-                request_body_size = len(request) - request.find('\r\n\r\n') - 4
-
-                # 检查请求体大小
-                if content_length > 5000 * 1024 or request_body_size > 5000 * 1024:
-                    raise ValueError('Request Body Too Large')
-
-                post_data = request.split('\r\n\r\n', 1)[1][:content_length]
-
-                # 异步监测传输大小
-                await monitor_size(post_data.encode())
-
-                post_params = parse_qs(post_data)
-
                 # 解析Cookie
                 cookies = {}
                 for line in request_lines:
@@ -70,8 +49,50 @@ class HTTPServer:
                         cookies = {key: cookie[key].value for key in cookie}
                         break
 
-                # 处理请求
-                response_headers, response_content = self.build_response(path, get_params, post_params, cookies)
+                if method == 'GET':
+                    # 处理 GET 请求
+                    # 统计已传输大小
+                    request_size = request_headers_size
+                    # 异步监测传输大小
+                    await monitor_size(request.encode())
+
+                    # 检查 GET 请求大小限制
+                    if request_size > 10 * 1024:
+                        raise ValueError('GET Request Too Large')
+
+                    # 处理请求
+                    response_headers, response_content = self.build_response(path, get_params, {}, cookies)
+
+                elif method == 'POST':
+                    # 处理 POST 请求
+                    # 解析POST参数
+                    content_length = 0
+                    for line in request_lines:
+                        if line.startswith('Content-Length:'):
+                            content_length = int(line.split(':')[1])
+                            break
+
+                    # 统计已传输大小
+                    request_size = request_headers_size + content_length
+                    # 异步监测传输大小
+                    await monitor_size(request.encode())
+
+                    # 检查 POST 请求大小限制
+                    if request_size > 5000 * 1024:
+                        raise ValueError('POST Request Too Large')
+
+                    post_data = request.split('\r\n\r\n', 1)[1][:content_length]
+
+                    # 异步监测传输大小
+                    await monitor_size(post_data.encode())
+
+                    post_params = parse_qs(post_data)
+
+                    # 处理请求
+                    response_headers, response_content = self.build_response(path, get_params, post_params, cookies)
+
+                else:
+                    raise ValueError('Unsupported HTTP Method')
 
                 # 发送响应
                 response = '\r\n'.join(response_headers) + response_content
