@@ -95,22 +95,22 @@ class HTTPServer:
                     raise ValueError('Unsupported HTTP Method')
 
                 # 发送响应
-                response = '\r\n'.join(response_headers) + response_content
+                response = '\r\n'.join(response_headers) + '\r\n\r\n' + response_content
                 writer.write(response.encode())
-                await writer.drain()
+                awaitwriter.drain()
 
                 # 等待传输大小监测完成
                 await asyncio.sleep(0)
 
         except ValueError as e:
             response_headers, response_content = self.build_error_response(413, str(e))
-            response = '\r\n'.join(response_headers) + response_content
+            response = '\r\n'.join(response_headers) + '\r\n\r\n' + response_content
             writer.write(response.encode())
             await writer.drain()
 
         except Exception as e:
             response_headers, response_content = self.build_error_response(500, 'Internal Server Error')
-            response = '\r\n'.join(response_headers) + response_content
+            response = '\r\n'.join(response_headers) + '\r\n\r\n' + response_content
             writer.write(response.encode())
             await writer.drain()
 
@@ -125,7 +125,6 @@ class HTTPServer:
             'Content-Type: text/html; charset=utf-8',
             'Content-Length: ' + str(len(response_content)),
             'Connection: close',
-            '\r\n'
         ]
 
         # 设置需要设置的Cookie
@@ -146,7 +145,6 @@ class HTTPServer:
             'Content-Type: text/html; charset=utf-8',
             'Content-Length: ' + str(len(response_content)),
             'Connection: close',
-            '\r\n'
         ]
         return response_headers, response_content
 
