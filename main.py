@@ -1,11 +1,13 @@
 import asyncio
 from urllib.parse import parse_qs
 from http.cookies import SimpleCookie
+import io
+import collections
 
 class HTTPServer:
-    MAX_REQUEST_SIZE = 10 * 1024  # 最大允许请求大小（10KB）
-    MAX_HEADER_SIZE = 10 * 1024  # 最大允许头部大小（10KB）
-    MAX_POST_SIZE = 5000 * 1024  # 最大允许POST大小（5MB）
+    MAX_REQUEST_SIZE = 10 * 1024  # Maximum allowed request size (10KB)
+    MAX_HEADER_SIZE = 10 * 1024  # Maximum allowed header size (10KB)
+    MAX_POST_SIZE = 5000 * 1024  # Maximum allowed POST size (5MB)
 
     def __init__(self, host, port):
         self.host = host
@@ -18,13 +20,13 @@ class HTTPServer:
         try:
             method, path, request_lines = self.parse_request(request)
 
-            # 解析GET参数
+            # Parse GET parameters
             get_params = {}
             if '?' in path:
                 path, query_string = path.split('?', 1)
                 get_params = parse_qs(query_string)
 
-            # 解析Cookie
+            # Parse Cookies
             cookies = {}
             for line in request_lines:
                 if line.startswith('Cookie:'):
@@ -35,11 +37,11 @@ class HTTPServer:
                     break
 
             if method == 'GET':
-                # 处理GET请求
+                # Handle GET request
                 response_headers, response_content = self.build_response(path, get_params, {}, cookies)
 
             elif method == 'POST':
-                # 处理POST请求
+                # Handle POST request
                 content_length = 0
                 for line in request_lines:
                     if line.startswith('Content-Length:'):
@@ -47,7 +49,7 @@ class HTTPServer:
                         break
 
                 if content_length > self.MAX_POST_SIZE:
-                    raise ValueError('POST请求太大')
+                    raise ValueError('POST request too large')
 
                 post_data = request.split('\r\n\r\n', 1)[1][:content_length]
                 post_params = parse_qs(post_data)
@@ -55,7 +57,7 @@ class HTTPServer:
                 response_headers, response_content = self.build_response(path, get_params, post_params, cookies)
 
             else:
-                raise ValueError('不支持的HTTP方法')
+                raise ValueError('Unsupported HTTP method')
 
             response = '\r\n'.join(response_headers) + '\r\n\r\n' + response_content
             writer.write(response.encode())
@@ -68,7 +70,7 @@ class HTTPServer:
             await writer.drain()
 
         except Exception as e:
-            response_headers, response_content = self.build_error_response(500, '服务器内部错误')
+            response_headers, response_content = self.build_error_response(500, 'Internal Server Error')
             response = '\r\n'.join(response_headers) + '\r\n\r\n' + response_content
             writer.write(response.encode())
             await writer.drain()
@@ -83,14 +85,21 @@ class HTTPServer:
 
             request_headers_size = sum(len(line) + 2 for line in request_lines)
             if request_headers_size > self.MAX_HEADER_SIZE:
-                raise ValueError('请求头太大')
+                raise ValueError('Request header too large')
 
             return method, path, request_lines
 
-        raise ValueError('无效的请求')
+        raise ValueError('Invalid request')
 
     def build_response(self, path, get_params, post_params, cookies):
-        response_content = f"<h1>Hello, World!</h1><p>请求路径：{path}</p><p>GET参数：{get_params}</p><p>POST参数：{post_params}</p><p>Cookie：{cookies}</p>"
+        response_content = io.BytesIO()
+        response_content.write(b"<h1>Hello, World!</h1>")
+        response_content.write(f"<p>Request path: {path}</p>".encode())
+        response_content.write(f"<p>GET parameters: {get_params}</p>".encode())
+        response_content.write(f"<p>POST parameters: {post_params}</p>".encode())
+        response_content.write(f"<p>Cookies: {cookies}</p>".encode())
+        response_content = response_content.getvalue()
+
         response_headers = [
             'HTTP/1.1 200 OK',
             'Content-Type: text/html; charset=utf-8',
@@ -120,7 +129,7 @@ class HTTPServer:
         server = await asyncio.start_server(self.handle_request, self.host, self.port)
 
         addr = server.sockets[0].getsockname()
-        print(f'服务器正在运行，访问地址：http://{addr[0]}:{addr[1]}')
+        print(f'Server is running, visit the following URL: http://{addr[0]}:{addr[1]}')
 
         async with server:
             await server.serve_forever()
